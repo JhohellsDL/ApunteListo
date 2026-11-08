@@ -19,10 +19,16 @@ export const color = {
   red: '#963732',
 };
 
-export function Screen({ children }: { children: ReactNode }) {
-  return <SafeAreaView style={styles.safe}>
+export function Screen({ children, refreshControl }: {
+  children: ReactNode;
+  refreshControl?: React.ReactElement;
+}) {
+  return <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
     <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={refreshControl}>
         <View style={styles.column}>{children}</View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -111,6 +117,8 @@ export const styles = StyleSheet.create({
   input: { borderColor: '#BCC8E0', borderWidth: 1, borderRadius: 13, paddingHorizontal: 13, paddingVertical: 12,
     color: color.ink, backgroundColor: color.white, fontSize: 16, minHeight: 49 },
   multiline: { minHeight: 145, textAlignVertical: 'top' },
+  imageThumbnail: { height: 125, width: '100%', borderRadius: 12, backgroundColor: color.background },
+  flexOne: { flex: 1 },
 });
 
 const variants = StyleSheet.create({

@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Text } from 'react-native';
 import { deleteQuiz, loadQuizzes, storeQuiz } from '../data/quizRepository';
 import { getStudyQuestions, recordAttempt, startStudy } from '../domain/study';
 import type { Attempt, Question, Quiz, StudyMode } from '../domain/types';
-import { QuizBuilder } from './QuizBuilder';
-import { QuizDetail, QuizMaterial, StudyHome } from './StudyLibrary';
-import { StudyResult, StudySession } from './StudySession';
+import { QuizBuilderScreen } from './screens/QuizBuilderScreen';
+import { QuizDetailScreen } from './screens/QuizDetailScreen';
+import { QuizMaterialScreen } from './screens/QuizMaterialScreen';
+import { StudyHomeScreen } from './screens/StudyHomeScreen';
+import { StudyResultScreen } from './screens/StudyResultScreen';
+import { StudySessionScreen } from './screens/StudySessionScreen';
 import { Button, color, Header, Notice, Panel, Screen, styles } from './ui';
 
 type Route =
@@ -19,20 +22,35 @@ export function StudyApp({ onExit }: { onExit?: () => void }) {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [route, setRoute] = useState<Route>({ name: 'home' });
   const [phase, setPhase] = useState<'loading' | 'error' | 'ready'>('loading');
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const writing = useRef(false);
 
-  const reload = useCallback(async () => {
-    setPhase('loading');
+  const reload = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setPhase('loading');
+    }
+
     try {
-      setQuizzes(await loadQuizzes());
+      const loaded = await loadQuizzes();
+      setQuizzes(loaded);
       setPhase('ready');
     } catch {
-      setPhase('error');
+      if (!isRefresh) {
+        setPhase('error');
+      }
+    } finally {
+      if (isRefresh) {
+        setRefreshing(false);
+      }
     }
   }, []);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    reload().catch(() => {});
+  }, [reload]);
 
   const goBack = useCallback((): boolean => {
     if (writing.current) return true;
@@ -59,10 +77,18 @@ export function StudyApp({ onExit }: { onExit?: () => void }) {
           setRoute({ name: 'detail', quizId: route.quizId });
           return true;
         }
-        Alert.alert('Salir del repaso', 'Las respuestas de este intento se descartarán. Tus estrellas se conservan.', [
-          { text: 'Seguir estudiando', style: 'cancel' },
-          { text: 'Salir', style: 'destructive', onPress: () => setRoute({ name: 'detail', quizId: route.quizId }) },
-        ]);
+        Alert.alert(
+          'Salir del repaso',
+          'Las respuestas de este intento se descartarán. Tus estrellas se conservan.',
+          [
+            { text: 'Seguir estudiando', style: 'cancel' },
+            {
+              text: 'Salir',
+              style: 'destructive',
+              onPress: () => setRoute({ name: 'detail', quizId: route.quizId }),
+            },
+          ],
+        );
         return true;
     }
   }, [onExit, route]);
@@ -80,7 +106,10 @@ export function StudyApp({ onExit }: { onExit?: () => void }) {
       await operation();
       return true;
     } catch {
-      Alert.alert('No pudimos guardar el cambio', 'Intenta otra vez. Tus quizzes guardados siguen disponibles.');
+      Alert.alert(
+        'No pudimos guardar el cambio',
+        'Intenta otra vez. Tus quizzes guardados siguen disponibles.',
+      );
       return false;
     } finally {
       writing.current = false;
@@ -90,9 +119,11 @@ export function StudyApp({ onExit }: { onExit?: () => void }) {
 
   async function persist(quiz: Quiz) {
     await storeQuiz(quiz);
-    setQuizzes(current => current.some(item => item.id === quiz.id)
-      ? current.map(item => item.id === quiz.id ? quiz : item)
-      : [quiz, ...current]);
+    setQuizzes(current =>
+      current.some(item => item.id === quiz.id)
+        ? current.map(item => (item.id === quiz.id ? quiz : item))
+        : [quiz, ...current],
+    );
   }
 
   const quiz = 'quizId' in route ? quizzes.find(item => item.id === route.quizId) : undefined;
@@ -104,57 +135,131 @@ export function StudyApp({ onExit }: { onExit?: () => void }) {
   }
 
   function mark(active: Quiz, id: string) {
-    const marked = active.marked.includes(id) ? active.marked.filter(item => item !== id) : [...active.marked, id];
-    void write(() => persist({ ...active, marked }));
+    const marked = active.marked.includes(id)
+      ? active.marked.filter(item => item !== id)
+      : [...active.marked, id];
+    write(() => persist({ ...active, marked })).catch(() => {});
   }
 
-  if (phase !== 'ready') return <Screen>
-    <Header back={onExit} label="REPASO OFFLINE" title="Mis quizzes" />
-    {phase === 'loading'
-      ? <Panel><ActivityIndicator color={color.primary} /><Text style={styles.body}>Cargando tus quizzes…</Text></Panel>
-      : <>
-        <Notice message="No pudimos abrir tus quizzes guardados." />
-        <Button label="Volver a intentar" onPress={() => void reload()} />
-      </>}
-  </Screen>;
+  if (phase !== 'ready') {
+    return (
+      <Screen>
+        <Header back={onExit} label="REPASO OFFLINE" title="Mis quizzes" />
+        {phase === 'loading' ? (
+          <Panel>
+            <ActivityIndicator color={color.primary} />
+            <Text style={styles.body}>Cargando tus quizzes…</Text>
+          </Panel>
+        ) : (
+          <>
+            <Notice message="No pudimos abrir tus quizzes guardados." />
+            <Button
+              label="Volver a intentar"
+              onPress={() => {
+                reload().catch(() => {});
+              }}
+            />
+          </>
+        )}
+      </Screen>
+    );
+  }
 
-  if (route.name === 'builder') return <QuizBuilder onBack={goBack} saving={saving} onSave={created => write(async () => {
-    await persist(created);
-    setRoute({ name: 'detail', quizId: created.id });
-  })} />;
+  if (route.name === 'builder') {
+    return (
+      <QuizBuilderScreen
+        onBack={goBack}
+        saving={saving}
+        onSave={created =>
+          write(async () => {
+            await persist(created);
+            setRoute({ name: 'detail', quizId: created.id });
+          })
+        }
+      />
+    );
+  }
 
   if (quiz) {
-    if (route.name === 'detail') return <QuizDetail quiz={quiz} saving={saving} onBack={goBack}
-      onStart={(mode, onlyMarked) => start(quiz, mode, onlyMarked)}
-      onMaterial={() => setRoute({ name: 'material', quizId: quiz.id })}
-      onDelete={() => Alert.alert('Eliminar quiz', `Se eliminará «${quiz.title}» y su progreso.`, [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Eliminar', style: 'destructive', onPress: () => void write(async () => {
-          await deleteQuiz(quiz.id);
-          setQuizzes(current => current.filter(item => item.id !== quiz.id));
-          setRoute({ name: 'home' });
-        }) },
-      ])} />;
+    if (route.name === 'detail') {
+      return (
+        <QuizDetailScreen
+          quiz={quiz}
+          saving={saving}
+          onBack={goBack}
+          onStart={(mode, onlyMarked) => start(quiz, mode, onlyMarked)}
+          onMaterial={() => setRoute({ name: 'material', quizId: quiz.id })}
+          onDelete={() =>
+            Alert.alert('Eliminar quiz', `Se eliminará «${quiz.title}» y su progreso.`, [
+              { text: 'Cancelar', style: 'cancel' },
+              {
+                text: 'Eliminar',
+                style: 'destructive',
+                onPress: () => {
+                  write(async () => {
+                    await deleteQuiz(quiz.id);
+                    setQuizzes(current => current.filter(item => item.id !== quiz.id));
+                    setRoute({ name: 'home' });
+                  }).catch(() => {});
+                },
+              },
+            ])
+          }
+        />
+      );
+    }
 
-    if (route.name === 'material') return <QuizMaterial quiz={quiz} onBack={goBack} />;
+    if (route.name === 'material') {
+      return <QuizMaterialScreen quiz={quiz} onBack={goBack} />;
+    }
 
-    if (route.name === 'session') return <StudySession quiz={quiz} questions={route.questions}
-      mode={route.mode} onBack={goBack} saving={saving} onMark={id => mark(quiz, id)}
-      onFinish={attempt => {
-        if (!attempt) {
-          setRoute({ name: 'detail', quizId: quiz.id });
-          return Promise.resolve(true);
-        }
-        return write(async () => {
-          await persist(recordAttempt(quiz, attempt));
-          setRoute({ name: 'result', quizId: quiz.id, attempt });
-        });
-      }} />;
+    if (route.name === 'session') {
+      return (
+        <StudySessionScreen
+          quiz={quiz}
+          questions={route.questions}
+          mode={route.mode}
+          onBack={goBack}
+          saving={saving}
+          onMark={id => mark(quiz, id)}
+          onFinish={attempt => {
+            if (!attempt) {
+              setRoute({ name: 'detail', quizId: quiz.id });
+              return Promise.resolve(true);
+            }
+            return write(async () => {
+              await persist(recordAttempt(quiz, attempt));
+              setRoute({ name: 'result', quizId: quiz.id, attempt });
+            });
+          }}
+        />
+      );
+    }
 
-    if (route.name === 'result') return <StudyResult quiz={quiz} attempt={route.attempt} saving={saving}
-      onBack={goBack} onMark={id => mark(quiz, id)} onErrors={() => start(quiz, 'errors')} />;
+    if (route.name === 'result') {
+      return (
+        <StudyResultScreen
+          quiz={quiz}
+          attempt={route.attempt}
+          saving={saving}
+          onBack={goBack}
+          onMark={id => mark(quiz, id)}
+          onErrors={() => start(quiz, 'errors')}
+        />
+      );
+    }
   }
 
-  return <StudyHome quizzes={quizzes} onExit={onExit} onNew={() => setRoute({ name: 'builder' })}
-    onOpen={quizId => setRoute({ name: 'detail', quizId })} />;
+  return (
+    <StudyHomeScreen
+      quizzes={quizzes}
+      refreshing={refreshing}
+      onRefresh={() => {
+        reload(true).catch(() => {});
+      }}
+      onExit={onExit}
+      onNew={() => setRoute({ name: 'builder' })}
+      onOpen={quizId => setRoute({ name: 'detail', quizId })}
+    />
+  );
 }

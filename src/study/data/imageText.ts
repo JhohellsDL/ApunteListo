@@ -2,6 +2,31 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import MlkitOcr from 'rn-mlkit-ocr';
 
+export function cleanOcrText(raw: string): string {
+  return raw
+    // Reconstruye palabras cortadas con guión al final de línea (ej. "for-\nma" -> "forma")
+    .replace(/([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)-\s*\n\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)/gu, '$1$2')
+    // Elimina guiones suaves invisibles
+    .replace(/\u00ad\s*/g, '')
+    // Normaliza espacios unicode
+    .replace(/[\u00a0\u2000-\u200b\u202f]/g, ' ')
+    .trim();
+}
+
+export function suggestTitleFromText(text: string): string {
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  for (const line of lines) {
+    const cleaned = line.replace(/^\d+(?:\.\d+)*\.?\s*/, '').trim();
+    if (cleaned.length >= 4 && cleaned.length <= 50 && !/^(?:pág|ejemplo|ej|nota)/i.test(cleaned)) {
+      if (cleaned === cleaned.toUpperCase() && /[A-Z]/.test(cleaned)) {
+        return cleaned.charAt(0) + cleaned.slice(1).toLowerCase();
+      }
+      return cleaned;
+    }
+  }
+  return '';
+}
+
 export async function pickStudyImages(source: 'camera' | 'library', remaining: number): Promise<string[]> {
   if (remaining < 1) return [];
   if (source === 'camera' && Platform.OS === 'android') {
@@ -33,5 +58,5 @@ export async function recognizeImage(uri: string): Promise<string> {
     throw new Error('Selecciona una imagen disponible en el dispositivo.');
   }
   const result = await MlkitOcr.recognizeText(uri, 'latin');
-  return result.text.trim();
+  return cleanOcrText(result.text);
 }
