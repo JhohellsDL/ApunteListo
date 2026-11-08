@@ -1,97 +1,101 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Repaso Offline · MVP React Native
 
-# Getting Started
+Módulo en TypeScript para integrar en una app base de React Native CLI. Convierte hasta tres fotos, capturas o páginas de texto en un quiz reutilizable. La interfaz está en español y el procesamiento ocurre en el teléfono.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Integración
 
-## Step 1: Start Metro
+1. Copia `src/study` a la carpeta `src` de tu app.
+2. Instala las dependencias nativas que falten. Estas son las versiones que se usaron en la revisión de tipos con React Native 0.81.5.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+   ```sh
+   npm install react-native-image-picker@8.2.1 rn-mlkit-ocr@0.3.1 @react-native-async-storage/async-storage@2.2.0 react-native-safe-area-context@5.6.2
+   ```
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+   Si tu app ya usa alguna dependencia, conserva una sola instalación y comprueba su compatibilidad con los imports del módulo. El código usa la API por defecto de AsyncStorage. Utiliza el gestor de paquetes y las versiones nativas que ya maneje tu proyecto.
 
-```sh
-# Using npm
-npm start
+3. Monta `StudyApp` como pantalla. Si tu app ya tiene un `SafeAreaProvider` arriba en el árbol, monta solo `<StudyApp />`. Como prueba, puedes usar temporalmente este `App.tsx`.
 
-# OR using Yarn
-yarn start
-```
+   ```tsx
+   import { SafeAreaProvider } from 'react-native-safe-area-context';
+   import { StudyApp } from './src/study';
 
-## Step 2: Build and run your app
+   export default function App() {
+     return (
+       <SafeAreaProvider>
+         <StudyApp />
+       </SafeAreaProvider>
+     );
+   }
+   ```
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+   Si lo integras en React Navigation, puedes ocultar el encabezado del navegador y pasar `onExit={() => navigation.goBack()}` para salir desde la portada. Monta una sola instancia del módulo y permite que su navegación interna maneje Atrás mientras la pantalla esté activa.
 
 ### Android
 
-```sh
-# Using npm
-npm run android
+En el `buildscript { ext { … } }` que ya tienes en `android/build.gradle`, agrega estas propiedades. `ocrUseBundled` hace que el modelo latino esté incluido en el build y disponible desde el primer uso en modo avión.
 
-# OR using Yarn
-yarn android
+```groovy
+ocrModels = ["latin"]
+ocrUseBundled = true
 ```
+
+Agrega el permiso al `android/app/src/main/AndroidManifest.xml` si todavía no existe, como hijo directo de `<manifest>`. El módulo solicita el permiso cuando el usuario toca **Tomar foto**.
+
+```xml
+<uses-permission android:name="android.permission.CAMERA" />
+```
+
+La galería usa el selector de fotos del sistema. Si tu base tiene un `minSdkVersion` menor que 30 y aún no incluye AndroidX Activity 1.9 o posterior, sigue la configuración de [Photo Picker retrocompatible](https://github.com/react-native-image-picker/react-native-image-picker#targeting-android-api-levels-below-30). Si el selector permite elegir más imágenes de las disponibles, el módulo aplica el límite al recibirlas y pide volver a seleccionar.
+
+Reconstruye con `npm run android` o el script equivalente de tu proyecto. El paquete OCR requiere Android API 23 o superior y pueden aplicar requisitos más altos de tu versión de React Native.
 
 ### iOS
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+En `ios/Podfile`, selecciona el modelo latino antes de `use_react_native!` y verifica que el *deployment target* sea iOS 15.5 o superior.
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+```ruby
+$ReactNativeOcrSubspecs = ['latin']
 ```
 
-Then, and every time you update your native dependencies, run:
+Dentro del `<dict>` de `Info.plist` agrega las descripciones de permisos si faltan.
 
-```sh
-bundle exec pod install
+```xml
+<key>NSCameraUsageDescription</key>
+<string>Toma fotos de tus páginas para crear material de estudio.</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Selecciona capturas o fotos de tus páginas de estudio.</string>
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+Ejecuta `bundle exec pod install` desde `ios` (o `pod install`, según tu proyecto), reconstruye y verifica la cámara en un dispositivo físico.
 
-```sh
-# Using npm
-npm run ios
+## Flujo
 
-# OR using Yarn
-yarn ios
-```
+- **Crear un quiz.** Ponle nombre, agrega fotos o capturas de hasta tres páginas, y revisa o pega el texto. Puedes reordenar las páginas, corregir el OCR y retirar preguntas antes de guardar. El ejemplo incluido permite recorrer el flujo sin cámara.
+- **Simulacro.** Mezcla preguntas y opciones al empezar. Permite volver atrás, entregar con preguntas pendientes mediante confirmación y ver la nota y las fuentes al final.
+- **Repasar errores.** Practica los errores pendientes con retroalimentación inmediata. Una respuesta correcta retira esa pregunta de la lista al terminar el intento.
+- **Marcar y repasar.** Las estrellas se guardan al tocarlas. Puedes practicar las marcadas o verlas en modo tarjeta.
+- **Tarjetas.** Intenta recordar la respuesta, voltéala para verla con su fuente y navega entre tarjetas. Puedes usar el quiz completo o solo tus marcadas.
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+## Qué se guarda
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+El almacenamiento local conserva cada quiz, el texto revisado por página, las estrellas, los errores pendientes y hasta 30 intentos completos por quiz. La pantalla de detalle muestra los cinco más recientes. La imagen sirve como referencia durante la importación. El quiz guarda el texto y la evidencia, sin copiar las fotos al almacenamiento permanente. Si sales de un simulacro o repaso antes de entregarlo, las respuestas del intento en curso se descartan y las estrellas se conservan.
 
-## Step 3: Modify your app
+El generador usa reglas en español y devuelve hasta 15 preguntas. Identifica definiciones, años y frases para completar. Para selección única usa términos o años que aparecen en el mismo material y recurre a completar cuando faltan alternativas compatibles. Las reglas pueden producir preguntas poco útiles con textos ambiguos o OCR deficiente. La revisión antes de guardar permite retirarlas. Para completar se compara la respuesta con el fragmento esperado, tolerando mayúsculas, tildes agudas y artículos iniciales. Se conserva la distinción entre ñ y n.
 
-Now that you have successfully run the app, let's make changes!
+## Organización
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+| Carpeta | Contenido |
+| --- | --- |
+| `domain` | Tipos, generación de preguntas, calificación, selección de preguntas de repaso y ejemplo |
+| `data` | Cámara, galería, OCR local y persistencia |
+| `presentation` | Pantallas, navegación del módulo y componentes visuales |
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+## Validación en tu app
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+1. Instala un build limpio, activa el modo avión **antes de usar el OCR**, toma una foto impresa y selecciona dos capturas locales. Comprueba que puedas leerlas y ordenar las páginas.
+2. Revisa el texto, genera el quiz y guarda. Cierra y vuelve a abrir la app. Confirma que el quiz y sus fuentes sigan disponibles.
+3. Entrega un simulacro con un error, márcalo, repásalo y aciértalo. Comprueba que desaparezca de errores pendientes y siga visible entre las marcadas.
+4. Entra a tarjetas, voltea una y verifica que la respuesta y la fuente aparezcan solo al revelarla.
+5. Prueba denegar el permiso de cámara y usar una captura borrosa. Comprueba que la galería, la edición de texto y la opción de volver a intentar sigan disponibles.
 
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+Documentación de las dependencias: [ML Kit en Android](https://developers.google.com/ml-kit/vision/text-recognition/v2/android), [wrapper OCR](https://github.com/ahmeterenodaci/rn-mlkit-ocr), [Image Picker](https://github.com/react-native-image-picker/react-native-image-picker) y [AsyncStorage 2.x](https://react-native-async-storage.github.io/2.0/Usage/).

@@ -10,10 +10,13 @@
     "test": "jest"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native/new-app-screen": "0.88.1",
     "react": "19.3.0",
     "react-native": "0.88.1",
-    "@react-native/new-app-screen": "0.88.1",
-    "react-native-safe-area-context": "^5.5.2"
+    "react-native-image-picker": "^8.3.0",
+    "react-native-safe-area-context": "^5.5.2",
+    "rn-mlkit-ocr": "^0.3.1"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

@@ -15,6 +15,7 @@ if linkage != nil
 end
 
 target 'ApunteListo' do
+  $ReactNativeOcrSubspecs = ['latin']
   config = use_native_modules!
 
   use_react_native!(
